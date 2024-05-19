@@ -306,21 +306,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         vertexDataArray[0] += 0.01f;
         if (vertexDataArray[0]>=1.0f) vertexDataArray[0] = -1.0f;
         
-        // D3D11_MAPPED_SUBRESOURCE resource = { 0 };
-        // ID3D11DeviceContext_Map(
-        //     deviceContextPtr,
-        //     (ID3D11Resource *)vertexBufferPtr,
-        //     0,
-        //     D3D11_MAP_WRITE_DISCARD,
-        //     0,
-        //     &resource
-        // );
-        // memcpy(resource.pData, vertexDataArray, sizeof(vertexDataArray));
-        // ID3D11DeviceContext_Unmap(
-        //     deviceContextPtr,
-        //     (ID3D11Resource *)vertexBufferPtr,
-        //     0,
-        // );
+        D3D11_MAPPED_SUBRESOURCE resource = { 0 };
+        ID3D11DeviceContext_Map(
+            deviceContextPtr,
+            (ID3D11Resource *)vertexBufferPtr,
+            0,
+            D3D11_MAP_WRITE_DISCARD,
+            0,
+            &resource
+        );
+        memcpy(resource.pData, vertexDataArray, sizeof(vertexDataArray));
+        ID3D11DeviceContext_Unmap(
+            deviceContextPtr,
+            (ID3D11Resource *)vertexBufferPtr,
+            0,
+        );
         
         // Clear background
         float backgroundColor[4] = {

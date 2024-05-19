@@ -33,14 +33,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     wc.lpfnWndProc   = WindowProc;
     wc.hInstance     = hInstance;
-    wc.lpszClassName = CLASS_NAME;
+    wc.lpszClassName = (LPCSTR)CLASS_NAME;
     
     RegisterClass(&wc);
     
     HWND hwnd = CreateWindowEx(
         0,
-        CLASS_NAME,
-        L"d3d11Hello",
+        (LPCSTR)CLASS_NAME,
+        (LPCSTR)L"d3d11Hello",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         NULL,
@@ -98,7 +98,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     hr = ID3D11Device_CreateRenderTargetView(
         devicePtr,
-        framebuffer,
+        (ID3D11Resource*)framebuffer,
         0,
         &renderTargetViewPtr
     );
@@ -210,8 +210,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     D3D11_BUFFER_DESC vertexBuffDesc = { 0 };
     vertexBuffDesc.ByteWidth = sizeof(vertexDataArray);
-    vertexBuffDesc.Usage = D3D11_USAGE_DEFAULT;
+    vertexBuffDesc.Usage = D3D11_USAGE_DYNAMIC;
     vertexBuffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    vertexBuffDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     D3D11_SUBRESOURCE_DATA srData = { 0 };
     srData.pSysMem = vertexDataArray;
     hr = ID3D11Device_CreateBuffer(
@@ -233,8 +234,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         }
         if(msg.message == WM_QUIT) break;
         
-        // vertexDataArray[0] += 0.01f;
-        // if (vertexDataArray[0]>=1.0f) vertexDataArray[0] = -1.0f;
+        vertexDataArray[0] += 0.01f;
+        if (vertexDataArray[0]>=1.0f) vertexDataArray[0] = -1.0f;
+        
+        D3D11_MAPPED_SUBRESOURCE resource = { 0 };
+        ID3D11DeviceContext_Map(
+            deviceContextPtr,
+            (ID3D11Resource *)vertexBufferPtr,
+            0,
+            D3D11_MAP_WRITE_DISCARD,
+            0,
+            &resource
+        );
+        memcpy(resource.pData, vertexDataArray, sizeof(vertexDataArray));
+        ID3D11DeviceContext_Unmap(
+            deviceContextPtr,
+            (ID3D11Resource *)vertexBufferPtr,
+            0,
+        );
         
         // Clear background
         float backgroundColor[4] = {

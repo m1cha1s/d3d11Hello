@@ -412,7 +412,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         );
         
         ULONGLONG dt = getDeltaTime()/10000;
-        printf("%I64u ms\n", dt);
+        printf("%I64u ms\n", dt); // TODO: Print it on screen. NOT in the console.
     }
     
     return 0;

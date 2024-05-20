@@ -5,6 +5,7 @@ https://antongerdelan.net/opengl/d3d11.html
 
 */
 
+#include <stdio.h>
 #include <stdbool.h>
 #include <float.h>
 
@@ -27,6 +28,7 @@ IDXGISwapChain* swapChainPtr                = NULL;
 ID3D11RenderTargetView* renderTargetViewPtr = NULL;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+ULONGLONG getDeltaTime();
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     
@@ -296,6 +298,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     MSG msg = { 0 };
     bool shouldClose = false;
+    
+    (void)getDeltaTime();
+    
     while(!shouldClose) {
         if(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
@@ -406,6 +411,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             0
         );
         
+        ULONGLONG dt = getDeltaTime()/10000;
+        printf("%I64u ms\n", dt);
     }
     
     return 0;
@@ -427,3 +434,24 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     }
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
+
+ULONGLONG getDeltaTime() {
+    static ULONGLONG prevTime = 0;
+    
+    SYSTEMTIME st = {0};
+    GetSystemTime(&st);
+    
+    FILETIME ft = {0};
+    SystemTimeToFileTime(&st, &ft);
+    
+    ULARGE_INTEGER ftl;
+    memcpy(&(ftl), &(ft), sizeof(ft));
+    
+    ULONGLONG currTime = ftl.QuadPart;
+    
+    ULONGLONG dt = currTime - prevTime;
+    prevTime = currTime;
+    
+    return dt;
+}
+

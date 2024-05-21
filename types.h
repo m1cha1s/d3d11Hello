@@ -18,6 +18,26 @@ typedef int64_t s64;
 typedef float  f32;
 typedef double f64;
 
+// Some math stuff
+
+struct v2 {
+    f32 x;
+    f32 y;
+};
+
+struct v3 {
+    f32 x;
+    f32 y;
+    f32 z;
+};
+
+struct v4 {
+    f32 x;
+    f32 y;
+    f32 z;
+    f32 w;
+};
+
 // GFX specific
 
 // This may change.

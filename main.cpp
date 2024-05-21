@@ -38,6 +38,7 @@ IDXGISwapChain* swapChainPtr                = nullptr;
 ID3D11RenderTargetView* renderTargetViewPtr = nullptr;
 
 ID3D11VertexShader* vertexShaders[MAX_SHADERS] = {nullptr};
+ID3D11InputLayout*  inputLayouts[MAX_SHADERS]  = {nullptr};
 ShaderIdx vertexShaderCount                    = 0;
 
 ID3D11PixelShader* pixelShaders[MAX_SHADERS] = {nullptr};
@@ -50,7 +51,8 @@ void InitGFX(HWND hwnd);
 
 // Shader stuff.
 ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std);
-ShaderIdx LoadShader(wchar_t* path, char* mainFn, ShaderType type);
+ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, D3D11_INPUT_ELEMENT_DESC* inputElementDesc, u64 inputElementCount);
+ShaderIdx LoadPixelShader(wchar_t* path, char* mainFn);
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     
@@ -82,90 +84,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     InitGFX(hwnd);
     
-    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-    #if defined( DEBUG ) || defined( _DEBUG )
-        flags |= D3DCOMPILE_DEBUG;
-    #endif
-    ID3DBlob *vsBlobPtr = NULL, *psBlobPtr = NULL;
-    
-    // Compile vertex shader
-    HRESULT hr = D3DCompileFromFile(
-        L"shaders.hlsl",
-        NULL,
-        NULL,
-        //D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "vsMain",
-        "vs_5_0",
-        flags,
-        0,
-        &vsBlobPtr,
-        &errorBlobPtr
-    );
-    if (FAILED(hr)) {
-        if (errorBlobPtr) {
-            OutputDebugStringA((char*)errorBlobPtr->GetBufferPointer());
-            errorBlobPtr->Release();
-        }
-        if (vsBlobPtr) vsBlobPtr->Release();
-        assert(false);
-    }
-    
-    // Compile pixel shader
-    hr = D3DCompileFromFile(
-        L"shaders.hlsl",
-        NULL,
-        NULL,
-        //D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "psMain",
-        "ps_5_0",
-        flags,
-        0,
-        &psBlobPtr,
-        &errorBlobPtr
-    );
-    if (FAILED(hr)) {
-        if (errorBlobPtr) {
-            OutputDebugStringA((char*)errorBlobPtr->GetBufferPointer());
-            errorBlobPtr->Release();
-        }
-        if (psBlobPtr) psBlobPtr->Release();
-        //if (vsBlobPtr) ID3D10Blob_Release(vsBlobPtr); // Not sure if supposed to do this.
-        assert(false);
-    }
-    
-    ID3D11VertexShader* vertexShaderPtr = NULL;
-    ID3D11PixelShader* pixelShaderPtr   = NULL;
-    
-    hr = devicePtr->CreateVertexShader(
-        vsBlobPtr->GetBufferPointer(),
-        vsBlobPtr->GetBufferSize(),
-        NULL,
-        &vertexShaderPtr
-    );
-    assert(SUCCEEDED(hr));
-    
-    hr = devicePtr->CreatePixelShader(
-        psBlobPtr->GetBufferPointer(),
-        psBlobPtr->GetBufferSize(),
-        NULL,
-        &pixelShaderPtr
-    );
-    assert(SUCCEEDED(hr));
-    
-    ID3D11InputLayout* inputLayoutPtr = NULL;
     D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
         { "POSITION",  0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         { "UV", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
     
-    hr = devicePtr->CreateInputLayout(
-        inputElementDesc,
-        ARRAYSIZE(inputElementDesc),
-        vsBlobPtr->GetBufferPointer(),
-        vsBlobPtr->GetBufferSize(),
-        &inputLayoutPtr
-    );
-    assert(SUCCEEDED(hr));
+    ShaderIdx vsIdx = LoadVertexShader(L"shaders.hlsl", "vsMain", inputElementDesc, ARRAYSIZE(inputElementDesc));
+    ShaderIdx psIdx = LoadPixelShader(L"shaders.hlsl", "psMain");
     
     // Create vertex buffer
     float vertexDataArray[] = {
@@ -189,7 +114,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     vertexBuffDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     D3D11_SUBRESOURCE_DATA srData = { 0 };
     srData.pSysMem = vertexDataArray;
-    hr = devicePtr->CreateBuffer(
+    HRESULT hr = devicePtr->CreateBuffer(
         &vertexBuffDesc,
         &srData,
         &vertexBufferPtr
@@ -321,7 +246,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
         );
         deviceContextPtr->IASetInputLayout(
-            inputLayoutPtr
+            inputLayouts[vsIdx]
         );
         
         deviceContextPtr->PSSetShaderResources(
@@ -343,12 +268,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         
         // Set Shaders
         deviceContextPtr->VSSetShader(
-            vertexShaderPtr,
+            vertexShaders[vsIdx],
             NULL,
             0
         );
         deviceContextPtr->PSSetShader(
-            pixelShaderPtr,
+            pixelShaders[psIdx],
             NULL,
             0
         );
@@ -487,12 +412,12 @@ ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std) {
         if (blobPtr) blobPtr->Release();
         assert(false);
     }
-    errorBlobPtr->Release();
+    if (errorBlobPtr) errorBlobPtr->Release();
     
     return blobPtr;
 }
 
-ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, ) {
+ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, D3D11_INPUT_ELEMENT_DESC* inputElementDesc, u64 inputElementCount) {
     if (vertexShaderCount>=MAX_SHADERS) assert("Too many shaders!!!" && false);
         
     ID3DBlob* vsBlobPtr = CompileShader(path, mainFn, STD_VS);
@@ -501,19 +426,34 @@ ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, ) {
         vsBlobPtr->GetBufferPointer(),
         vsBlobPtr->GetBufferSize(),
         NULL,
-        &vertexShaders[vertexShaderCount++]
+        &vertexShaders[vertexShaderCount]
     );
     assert("Failed to load Vertex Shader!!!" && SUCCEEDED(hr));
+    
+    hr = devicePtr->CreateInputLayout(
+        inputElementDesc,
+        inputElementCount,
+        vsBlobPtr->GetBufferPointer(),
+        vsBlobPtr->GetBufferSize(),
+        &inputLayouts[vertexShaderCount++]
+    );
+    assert("Failed to create Input Layout!!!" && SUCCEEDED(hr));
+    
+    return vertexShaderCount-1;
 }
 
-ShaderIdx LoadShader(wchar_t* path, char* mainFn, ShaderType type) {
-    switch (type) {
-    case VertexShader: {
-        
-    } break;
-    case PixelShader: {
-        if (pixelShaderCount>=MAX_SHADERS) assert("Too many shaders!!!" && false);
-    } break;
-    }
+ShaderIdx LoadPixelShader(wchar_t* path, char* mainFn) {
+    if (pixelShaderCount>=MAX_SHADERS) assert("Too many shaders!!!" && false);
     
+    ID3DBlob* psBlobPtr = CompileShader(path, mainFn, STD_PS);
+    
+     HRESULT hr = devicePtr->CreatePixelShader(
+        psBlobPtr->GetBufferPointer(),
+        psBlobPtr->GetBufferSize(),
+        NULL,
+        &pixelShaders[pixelShaderCount++]
+    );
+    assert("Failed to create Pixel Shader" && SUCCEEDED(hr));
+    
+    return pixelShaderCount-1;
 }

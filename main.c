@@ -324,7 +324,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         ID3D11DeviceContext_Unmap(
             deviceContextPtr,
             (ID3D11Resource *)vertexBufferPtr,
-            0,
+            0
         );
         
         // Clear background

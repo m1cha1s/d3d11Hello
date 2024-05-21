@@ -16,8 +16,16 @@ https://antongerdelan.net/opengl/d3d11.html
 #include <dxgi.h>
 #include <d3dcompiler.h>
 #include <assert.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#define TYPES_IMPLEMENTATION
+#include "types.h"
+#define STDLIB_ALLOC_IMPLEMENTATION
+#include "alloc.h"
+
+#define MAX_SHADERS 256
 
 // GLOBALS
 
@@ -26,9 +34,14 @@ ID3D11Device* devicePtr                     = NULL;
 ID3D11DeviceContext* deviceContextPtr       = NULL;
 IDXGISwapChain* swapChainPtr                = NULL;
 ID3D11RenderTargetView* renderTargetViewPtr = NULL;
+ID3DBlob* shaders[MAX_SHADERS]              = {NULL};
+u64 shaderCount = 0;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 ULONGLONG getDeltaTime();
+
+void InitGFX(HWND hwnd);
+ShaderIdx CompileShader(string path, string mainName, string std);
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     
@@ -58,66 +71,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         return 0;
     }
     
-    // Initialize D3D11
-    DXGI_SWAP_CHAIN_DESC swapChainDesc = { 0 };
-    swapChainDesc.BufferDesc.RefreshRate.Numerator    = 0;
-    swapChainDesc.BufferDesc.RefreshRate.Denominator  = 1;
-    swapChainDesc.BufferDesc.Format     = DXGI_FORMAT_B8G8R8A8_UNORM;
-    swapChainDesc.SampleDesc.Count      = 1;
-    swapChainDesc.SampleDesc.Quality    = 0;
-    swapChainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.BufferCount           = 1;
-    swapChainDesc.OutputWindow          = hwnd;
-    swapChainDesc.Windowed              = true;
+    InitGFX(hwnd);
     
-    D3D_FEATURE_LEVEL featureLevel;
-    UINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
-    #if defined( DEBUG ) || defined( _DEBUG )
-    flags |= D3D11_CREATE_DEVICE_DEBUG;
-    #endif
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(
-        NULL,
-        D3D_DRIVER_TYPE_HARDWARE,
-        NULL,
-        flags,
-        NULL,
-        0,
-        D3D11_SDK_VERSION,
-        &swapChainDesc,
-        &swapChainPtr,
-        &devicePtr,
-        &featureLevel,
-        &deviceContextPtr
-    );
-    assert(S_OK==hr && swapChainPtr && devicePtr && deviceContextPtr);
-    
-    ID3D11Texture2D* framebuffer;
-    // hr = swapChainPtr->lpVtbl->GetBuffer(swapChainPtr,
-    hr = IDXGISwapChain_GetBuffer(
-        swapChainPtr,
-        0,
-        &IID_ID3D11Texture2D,
-        (void**)&framebuffer
-    );
-    assert(SUCCEEDED(hr));
-    
-    hr = ID3D11Device_CreateRenderTargetView(
-        devicePtr,
-        (ID3D11Resource*)framebuffer,
-        0,
-        &renderTargetViewPtr
-    );
-    assert(SUCCEEDED(hr));
-    
-    flags = D3DCOMPILE_ENABLE_STRICTNESS;
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
     #if defined( DEBUG ) || defined( _DEBUG )
         flags |= D3DCOMPILE_DEBUG;
     #endif
     ID3DBlob *vsBlobPtr = NULL, *psBlobPtr = NULL, *errorBlobPtr = NULL;
     
     // Compile vertex shader
-    hr = D3DCompileFromFile(
-        L"C:\\Users\\msule\\Dev\\d3d11Hello\\shaders.hlsl",
+    HRESULT hr = D3DCompileFromFile(
+        L"shaders.hlsl",
         NULL,
         NULL,
         //D3D_COMPILE_STANDARD_FILE_INCLUDE,
@@ -139,7 +103,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     // Compile pixel shader
     hr = D3DCompileFromFile(
-        L"C:\\Users\\msule\\Dev\\d3d11Hello\\shaders.hlsl",
+        L"shaders.hlsl",
         NULL,
         NULL,
         //D3D_COMPILE_STANDARD_FILE_INCLUDE,
@@ -455,3 +419,78 @@ ULONGLONG getDeltaTime() {
     return dt;
 }
 
+void InitGFX(HWND hwnd) {
+    // Initialize D3D11
+    DXGI_SWAP_CHAIN_DESC swapChainDesc = { 0 };
+    swapChainDesc.BufferDesc.RefreshRate.Numerator    = 0;
+    swapChainDesc.BufferDesc.RefreshRate.Denominator  = 1;
+    swapChainDesc.BufferDesc.Format     = DXGI_FORMAT_B8G8R8A8_UNORM;
+    swapChainDesc.SampleDesc.Count      = 1;
+    swapChainDesc.SampleDesc.Quality    = 0;
+    swapChainDesc.BufferUsage           = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDesc.BufferCount           = 1;
+    swapChainDesc.OutputWindow          = hwnd;
+    swapChainDesc.Windowed              = true;
+    
+    D3D_FEATURE_LEVEL featureLevel;
+    UINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
+    #if defined( DEBUG ) || defined( _DEBUG )
+    flags |= D3D11_CREATE_DEVICE_DEBUG;
+    #endif
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(
+        NULL,
+        D3D_DRIVER_TYPE_HARDWARE,
+        NULL,
+        flags,
+        NULL,
+        0,
+        D3D11_SDK_VERSION,
+        &swapChainDesc,
+        &swapChainPtr,
+        &devicePtr,
+        &featureLevel,
+        &deviceContextPtr
+    );
+    assert(S_OK==hr && swapChainPtr && devicePtr && deviceContextPtr);
+    
+    ID3D11Texture2D* framebuffer;
+    // hr = swapChainPtr->lpVtbl->GetBuffer(swapChainPtr,
+    hr = IDXGISwapChain_GetBuffer(
+        swapChainPtr,
+        0,
+        &IID_ID3D11Texture2D,
+        (void**)&framebuffer
+    );
+    assert(SUCCEEDED(hr));
+    
+    hr = ID3D11Device_CreateRenderTargetView(
+        devicePtr,
+        (ID3D11Resource*)framebuffer,
+        0,
+        &renderTargetViewPtr
+    );
+    assert(SUCCEEDED(hr));
+}
+
+ShaderIdx CompileShader(string path, string mainName, string std) {
+    HRESULT hr = D3DCompileFromFile(
+        L"shaders.hlsl",
+        NULL,
+        NULL,
+        //D3D_COMPILE_STANDARD_FILE_INCLUDE,
+        "vsMain",
+        "vs_5_0",
+        flags,
+        0,
+        &vsBlobPtr,
+        &errorBlobPtr
+    );
+    if (FAILED(hr)) {
+        if (errorBlobPtr) {
+            OutputDebugStringA((char*)ID3D10Blob_GetBufferPointer(errorBlobPtr));
+            ID3D10Blob_Release(errorBlobPtr);
+        }
+        if (vsBlobPtr) ID3D10Blob_Release(vsBlobPtr);
+        assert(false);
+    }
+}

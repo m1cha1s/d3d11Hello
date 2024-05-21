@@ -6,11 +6,10 @@ https://antongerdelan.net/opengl/d3d11.html
 */
 
 #include <stdio.h>
-#include <stdbool.h>
 #include <float.h>
 
 #define WIN32_LEAN_AND_MEAN
-#define COBJMACROS
+// #define COBJMACROS
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -20,28 +19,38 @@ https://antongerdelan.net/opengl/d3d11.html
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define TYPES_IMPLEMENTATION
 #include "types.h"
+
 #define STDLIB_ALLOC_IMPLEMENTATION
 #include "alloc.h"
+
+#define STD_VS "vs_5_0"
+#define STD_PS "ps_5_0"
 
 #define MAX_SHADERS 256
 
 // GLOBALS
 
 // D3D11
-ID3D11Device* devicePtr                     = NULL;
-ID3D11DeviceContext* deviceContextPtr       = NULL;
-IDXGISwapChain* swapChainPtr                = NULL;
-ID3D11RenderTargetView* renderTargetViewPtr = NULL;
-ID3DBlob* shaders[MAX_SHADERS]              = {NULL};
-u64 shaderCount = 0;
+ID3D11Device* devicePtr                     = nullptr;
+ID3D11DeviceContext* deviceContextPtr       = nullptr;
+IDXGISwapChain* swapChainPtr                = nullptr;
+ID3D11RenderTargetView* renderTargetViewPtr = nullptr;
+
+ID3D11VertexShader* vertexShaders[MAX_SHADERS] = {nullptr};
+ShaderIdx vertexShaderCount                    = 0;
+
+ID3D11PixelShader* pixelShaders[MAX_SHADERS] = {nullptr};
+ShaderIdx pixelShaderCount                   = 0;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 ULONGLONG getDeltaTime();
 
 void InitGFX(HWND hwnd);
-ShaderIdx CompileShader(string path, string mainName, string std);
+
+// Shader stuff.
+ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std);
+ShaderIdx LoadShader(wchar_t* path, char* mainFn, ShaderType type);
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     
@@ -77,7 +86,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     #if defined( DEBUG ) || defined( _DEBUG )
         flags |= D3DCOMPILE_DEBUG;
     #endif
-    ID3DBlob *vsBlobPtr = NULL, *psBlobPtr = NULL, *errorBlobPtr = NULL;
+    ID3DBlob *vsBlobPtr = NULL, *psBlobPtr = NULL;
     
     // Compile vertex shader
     HRESULT hr = D3DCompileFromFile(
@@ -94,10 +103,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     );
     if (FAILED(hr)) {
         if (errorBlobPtr) {
-            OutputDebugStringA((char*)ID3D10Blob_GetBufferPointer(errorBlobPtr));
-            ID3D10Blob_Release(errorBlobPtr);
+            OutputDebugStringA((char*)errorBlobPtr->GetBufferPointer());
+            errorBlobPtr->Release();
         }
-        if (vsBlobPtr) ID3D10Blob_Release(vsBlobPtr);
+        if (vsBlobPtr) vsBlobPtr->Release();
         assert(false);
     }
     
@@ -116,10 +125,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     );
     if (FAILED(hr)) {
         if (errorBlobPtr) {
-            OutputDebugStringA((char*)ID3D10Blob_GetBufferPointer(errorBlobPtr));
-            ID3D10Blob_Release(errorBlobPtr);
+            OutputDebugStringA((char*)errorBlobPtr->GetBufferPointer());
+            errorBlobPtr->Release();
         }
-        if (psBlobPtr) ID3D10Blob_Release(psBlobPtr);
+        if (psBlobPtr) psBlobPtr->Release();
         //if (vsBlobPtr) ID3D10Blob_Release(vsBlobPtr); // Not sure if supposed to do this.
         assert(false);
     }
@@ -127,19 +136,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     ID3D11VertexShader* vertexShaderPtr = NULL;
     ID3D11PixelShader* pixelShaderPtr   = NULL;
     
-    hr = ID3D11Device_CreateVertexShader(
-        devicePtr,
-        ID3D10Blob_GetBufferPointer(vsBlobPtr),
-        ID3D10Blob_GetBufferSize(vsBlobPtr),
+    hr = devicePtr->CreateVertexShader(
+        vsBlobPtr->GetBufferPointer(),
+        vsBlobPtr->GetBufferSize(),
         NULL,
         &vertexShaderPtr
     );
     assert(SUCCEEDED(hr));
     
-    hr = ID3D11Device_CreatePixelShader(
-        devicePtr,
-        ID3D10Blob_GetBufferPointer(psBlobPtr),
-        ID3D10Blob_GetBufferSize(psBlobPtr),
+    hr = devicePtr->CreatePixelShader(
+        psBlobPtr->GetBufferPointer(),
+        psBlobPtr->GetBufferSize(),
         NULL,
         &pixelShaderPtr
     );
@@ -151,12 +158,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         { "UV", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
     
-    hr = ID3D11Device_CreateInputLayout(
-        devicePtr,
+    hr = devicePtr->CreateInputLayout(
         inputElementDesc,
         ARRAYSIZE(inputElementDesc),
-        ID3D10Blob_GetBufferPointer(vsBlobPtr),
-        ID3D10Blob_GetBufferSize(vsBlobPtr),
+        vsBlobPtr->GetBufferPointer(),
+        vsBlobPtr->GetBufferSize(),
         &inputLayoutPtr
     );
     assert(SUCCEEDED(hr));
@@ -183,8 +189,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     vertexBuffDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     D3D11_SUBRESOURCE_DATA srData = { 0 };
     srData.pSysMem = vertexDataArray;
-    hr = ID3D11Device_CreateBuffer(
-        devicePtr,
+    hr = devicePtr->CreateBuffer(
         &vertexBuffDesc,
         &srData,
         &vertexBufferPtr
@@ -215,8 +220,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     srTex.pSysMem = bitmap;
     srTex.SysMemPitch = x*4;
     
-    hr = ID3D11Device_CreateTexture2D(
-        devicePtr,
+    hr = devicePtr->CreateTexture2D(
         &textureDesc,
         &srTex,
         &texture
@@ -227,8 +231,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     ID3D11ShaderResourceView *textureShaderResViewPtr = NULL;
     
-    hr = ID3D11Device_CreateShaderResourceView(
-        devicePtr,
+    hr = devicePtr->CreateShaderResourceView(
         (ID3D11Resource *)texture,
         NULL,
         &textureShaderResViewPtr
@@ -252,8 +255,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     
     ID3D11SamplerState* samplerStatePtr = NULL;
     
-    ID3D11Device_CreateSamplerState(
-        devicePtr,
+    devicePtr->CreateSamplerState(
         &textureSamplerDesc,
         &samplerStatePtr
     );
@@ -276,8 +278,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         if (vertexDataArray[0]>=1.0f) vertexDataArray[0] = -1.0f;
         
         D3D11_MAPPED_SUBRESOURCE resource = { 0 };
-        ID3D11DeviceContext_Map(
-            deviceContextPtr,
+        deviceContextPtr->Map(
             (ID3D11Resource *)vertexBufferPtr,
             0,
             D3D11_MAP_WRITE_DISCARD,
@@ -285,8 +286,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             &resource
         );
         memcpy(resource.pData, vertexDataArray, sizeof(vertexDataArray));
-        ID3D11DeviceContext_Unmap(
-            deviceContextPtr,
+        deviceContextPtr->Unmap(
             (ID3D11Resource *)vertexBufferPtr,
             0
         );
@@ -295,8 +295,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         float backgroundColor[4] = {
             0x64 / 255.0f, 0x95 / 255.0f, 0xED / 255.0f, 1.0f
         };
-        ID3D11DeviceContext_ClearRenderTargetView(
-            deviceContextPtr,
+        deviceContextPtr->ClearRenderTargetView(
             renderTargetViewPtr,
             backgroundColor
         );
@@ -312,34 +311,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             0.0f,
             1.0f
         };
-        ID3D11DeviceContext_RSSetViewports(deviceContextPtr, 1,&viewport);
+        deviceContextPtr->RSSetViewports(1,&viewport);
         
         // Set Output Merger
-        ID3D11DeviceContext_OMSetRenderTargets(deviceContextPtr, 1, &renderTargetViewPtr, NULL);
+        deviceContextPtr->OMSetRenderTargets(1, &renderTargetViewPtr, NULL);
         
         // Set Input Assembler
-        ID3D11DeviceContext_IASetPrimitiveTopology(
-            deviceContextPtr,
+        deviceContextPtr->IASetPrimitiveTopology(
             D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
         );
-        ID3D11DeviceContext_IASetInputLayout(
-            deviceContextPtr,
+        deviceContextPtr->IASetInputLayout(
             inputLayoutPtr
         );
         
-        ID3D11DeviceContext_PSSetShaderResources(
-            deviceContextPtr,
+        deviceContextPtr->PSSetShaderResources(
             0, 1,
             &textureShaderResViewPtr
         );
-        ID3D11DeviceContext_PSSetSamplers(
-            deviceContextPtr,
+        deviceContextPtr->PSSetSamplers(
             0, 1,
             &samplerStatePtr
         );
         
-        ID3D11DeviceContext_IASetVertexBuffers(
-            deviceContextPtr,
+        deviceContextPtr->IASetVertexBuffers(
             0,
             1,
             &vertexBufferPtr,
@@ -348,29 +342,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         );
         
         // Set Shaders
-        ID3D11DeviceContext_VSSetShader(
-            deviceContextPtr,
+        deviceContextPtr->VSSetShader(
             vertexShaderPtr,
             NULL,
             0
         );
-        ID3D11DeviceContext_PSSetShader(
-            deviceContextPtr,
+        deviceContextPtr->PSSetShader(
             pixelShaderPtr,
             NULL,
             0
         );
         
         // Finally draw the triangle
-        ID3D11DeviceContext_Draw(
-            deviceContextPtr,
+        deviceContextPtr->Draw(
             vertexCount,
             0
         );
         
         // Swap the Buffers(present the frame)
-        IDXGISwapChain_Present(
-            swapChainPtr,
+        swapChainPtr->Present(
             1,
             0
         );
@@ -455,16 +445,14 @@ void InitGFX(HWND hwnd) {
     
     ID3D11Texture2D* framebuffer;
     // hr = swapChainPtr->lpVtbl->GetBuffer(swapChainPtr,
-    hr = IDXGISwapChain_GetBuffer(
-        swapChainPtr,
+    hr = swapChainPtr->GetBuffer(
         0,
-        &IID_ID3D11Texture2D,
+        __uuidof(ID3D11Texture2D),
         (void**)&framebuffer
     );
     assert(SUCCEEDED(hr));
     
-    hr = ID3D11Device_CreateRenderTargetView(
-        devicePtr,
+    hr = devicePtr->CreateRenderTargetView(
         (ID3D11Resource*)framebuffer,
         0,
         &renderTargetViewPtr
@@ -472,25 +460,60 @@ void InitGFX(HWND hwnd) {
     assert(SUCCEEDED(hr));
 }
 
-ShaderIdx CompileShader(string path, string mainName, string std) {
+ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std) {
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+    #if defined( DEBUG ) || defined( _DEBUG )
+        flags |= D3DCOMPILE_DEBUG;
+    #endif
+    ID3DBlob *blobPtr = NULL, *errorBlobPtr = NULL;
+
     HRESULT hr = D3DCompileFromFile(
-        L"shaders.hlsl",
+        path,
         NULL,
         NULL,
         //D3D_COMPILE_STANDARD_FILE_INCLUDE,
-        "vsMain",
-        "vs_5_0",
+        mainFn,
+        std,
         flags,
         0,
-        &vsBlobPtr,
+        &blobPtr,
         &errorBlobPtr
     );
     if (FAILED(hr)) {
         if (errorBlobPtr) {
-            OutputDebugStringA((char*)ID3D10Blob_GetBufferPointer(errorBlobPtr));
-            ID3D10Blob_Release(errorBlobPtr);
+            OutputDebugStringA((char*)errorBlobPtr->GetBufferPointer());
+            errorBlobPtr->Release();
         }
-        if (vsBlobPtr) ID3D10Blob_Release(vsBlobPtr);
+        if (blobPtr) blobPtr->Release();
         assert(false);
     }
+    errorBlobPtr->Release();
+    
+    return blobPtr;
+}
+
+ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, ) {
+    if (vertexShaderCount>=MAX_SHADERS) assert("Too many shaders!!!" && false);
+        
+    ID3DBlob* vsBlobPtr = CompileShader(path, mainFn, STD_VS);
+    
+    HRESULT hr = devicePtr->CreateVertexShader(
+        vsBlobPtr->GetBufferPointer(),
+        vsBlobPtr->GetBufferSize(),
+        NULL,
+        &vertexShaders[vertexShaderCount++]
+    );
+    assert("Failed to load Vertex Shader!!!" && SUCCEEDED(hr));
+}
+
+ShaderIdx LoadShader(wchar_t* path, char* mainFn, ShaderType type) {
+    switch (type) {
+    case VertexShader: {
+        
+    } break;
+    case PixelShader: {
+        if (pixelShaderCount>=MAX_SHADERS) assert("Too many shaders!!!" && false);
+    } break;
+    }
+    
 }

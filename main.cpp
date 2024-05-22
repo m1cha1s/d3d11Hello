@@ -353,7 +353,7 @@ ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std) {
             errorBlobPtr->Release();
         }
         if (blobPtr) blobPtr->Release();
-        assert(false);
+        assert("Failed to compile shader." && false);
     }
     if (errorBlobPtr) errorBlobPtr->Release();
     

@@ -28,6 +28,7 @@ https://antongerdelan.net/opengl/d3d11.html
 #define STD_PS "ps_5_0"
 
 #define MAX_SHADERS 256
+#define MAX_BUFFERS 256
 
 // GLOBALS
 
@@ -44,6 +45,9 @@ ShaderIdx vertexShaderCount                    = 0;
 ID3D11PixelShader* pixelShaders[MAX_SHADERS] = {nullptr};
 ShaderIdx pixelShaderCount                   = 0;
 
+ID3D11Buffer* buffers[MAX_BUFFERS]           = {nullptr};
+BufferIdx bufferCount                        = 0;
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 ULONGLONG getDeltaTime();
 
@@ -53,6 +57,9 @@ void InitGFX(HWND hwnd);
 ID3DBlob* CompileShader(wchar_t* path, char* mainFn, char* std);
 ShaderIdx LoadVertexShader(wchar_t* path, char* mainFn, D3D11_INPUT_ELEMENT_DESC* inputElementDesc, u64 inputElementCount);
 ShaderIdx LoadPixelShader(wchar_t* path, char* mainFn);
+BufferIdx CreateVertexBuffer(u64 size, BufferIdx& idx=bufferCount);
+void DestroyVertexBuffer(BufferIdx idx);
+BufferIdx ReplaceVertexBuffer(u64 size, BufferIdx idx);
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     
@@ -105,26 +112,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     UINT vertexOffset = 0;
     UINT vertexCount  = 6;
     
-    ID3D11Buffer* vertexBufferPtr = NULL;
-    
-    D3D11_BUFFER_DESC vertexBuffDesc = { 0 };
-    vertexBuffDesc.ByteWidth = sizeof(vertexDataArray);
-    vertexBuffDesc.Usage = D3D11_USAGE_DYNAMIC;
-    vertexBuffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    vertexBuffDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    D3D11_SUBRESOURCE_DATA srData = { 0 };
-    srData.pSysMem = vertexDataArray;
-    HRESULT hr = devicePtr->CreateBuffer(
-        &vertexBuffDesc,
-        &srData,
-        &vertexBufferPtr
-    );
-    assert(SUCCEEDED(hr));
+    BufferIdx vbIdx = CreateVertexBuffer(sizeof(vertexDataArray));
     
     // Load and set texture.
     
     int x,y,n;
-    unsigned char *bitmap = stbi_load("res/aaa.png", &x, &y, &n, 4);
+    u8 *bitmap = stbi_load("res/aaa.png", &x, &y, &n, 4);
     assert(bitmap); // Make sure the bitmap has been loaded.
     
     ID3D11Texture2D* texture = NULL;
@@ -145,7 +138,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     srTex.pSysMem = bitmap;
     srTex.SysMemPitch = x*4;
     
-    hr = devicePtr->CreateTexture2D(
+    HRESULT hr = devicePtr->CreateTexture2D(
         &textureDesc,
         &srTex,
         &texture
@@ -203,27 +196,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         if (vertexDataArray[0]>=1.0f) vertexDataArray[0] = -1.0f;
         
         D3D11_MAPPED_SUBRESOURCE resource = { 0 };
-        deviceContextPtr->Map(
-            (ID3D11Resource *)vertexBufferPtr,
-            0,
-            D3D11_MAP_WRITE_DISCARD,
-            0,
-            &resource
-        );
+        deviceContextPtr->Map((ID3D11Resource *)buffers[vbIdx], 0, D3D11_MAP_WRITE_DISCARD, 0, &resource);
         memcpy(resource.pData, vertexDataArray, sizeof(vertexDataArray));
-        deviceContextPtr->Unmap(
-            (ID3D11Resource *)vertexBufferPtr,
-            0
-        );
+        deviceContextPtr->Unmap((ID3D11Resource *)buffers[vbIdx], 0);
         
         // Clear background
         float backgroundColor[4] = {
             0x64 / 255.0f, 0x95 / 255.0f, 0xED / 255.0f, 1.0f
         };
-        deviceContextPtr->ClearRenderTargetView(
-            renderTargetViewPtr,
-            backgroundColor
-        );
+        deviceContextPtr->ClearRenderTargetView(renderTargetViewPtr, backgroundColor);
         
         // Set the viewport
         RECT winRect;
@@ -242,53 +223,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         deviceContextPtr->OMSetRenderTargets(1, &renderTargetViewPtr, NULL);
         
         // Set Input Assembler
-        deviceContextPtr->IASetPrimitiveTopology(
-            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-        );
-        deviceContextPtr->IASetInputLayout(
-            inputLayouts[vsIdx]
-        );
+        deviceContextPtr->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        deviceContextPtr->IASetInputLayout(inputLayouts[vsIdx]);
         
-        deviceContextPtr->PSSetShaderResources(
-            0, 1,
-            &textureShaderResViewPtr
-        );
-        deviceContextPtr->PSSetSamplers(
-            0, 1,
-            &samplerStatePtr
-        );
+        deviceContextPtr->PSSetShaderResources(0, 1, &textureShaderResViewPtr);
+        deviceContextPtr->PSSetSamplers(0, 1, &samplerStatePtr);
         
-        deviceContextPtr->IASetVertexBuffers(
-            0,
-            1,
-            &vertexBufferPtr,
-            &vertexStride,
-            &vertexOffset
-        );
+        deviceContextPtr->IASetVertexBuffers(0, 1, &buffers[vbIdx], &vertexStride, &vertexOffset);
         
         // Set Shaders
-        deviceContextPtr->VSSetShader(
-            vertexShaders[vsIdx],
-            NULL,
-            0
-        );
-        deviceContextPtr->PSSetShader(
-            pixelShaders[psIdx],
-            NULL,
-            0
-        );
+        deviceContextPtr->VSSetShader(vertexShaders[vsIdx], NULL, 0);
+        deviceContextPtr->PSSetShader(pixelShaders[psIdx], NULL, 0);
         
         // Finally draw the triangle
-        deviceContextPtr->Draw(
-            vertexCount,
-            0
-        );
+        deviceContextPtr->Draw(vertexCount, 0);
         
         // Swap the Buffers(present the frame)
-        swapChainPtr->Present(
-            1,
-            0
-        );
+        swapChainPtr->Present(1, 0);
         
         ULONGLONG dt = getDeltaTime()/10000;
         printf("%I64u ms\n", dt); // TODO: Print it on screen. NOT in the console.
@@ -302,14 +253,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
-    // case WM_PAINT: {
-    //     PAINTSTRUCT ps;
-    //     HDC hdc = BeginPaint(hwnd, &ps);
-        
-    //     FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
-        
-    //     EndPaint(hwnd, &ps);
-    // } return 0;
     }
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
@@ -456,4 +399,33 @@ ShaderIdx LoadPixelShader(wchar_t* path, char* mainFn) {
     assert("Failed to create Pixel Shader" && SUCCEEDED(hr));
     
     return pixelShaderCount-1;
+}
+
+BufferIdx CreateVertexBuffer(u64 size, BufferIdx& idx) {
+    if (bufferCount>=MAX_BUFFERS) assert("Too many buffers!!!" && false);
+
+    D3D11_BUFFER_DESC vertexBuffDesc = { 0 };
+    vertexBuffDesc.ByteWidth = size;
+    vertexBuffDesc.Usage = D3D11_USAGE_DYNAMIC;
+    vertexBuffDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    vertexBuffDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    
+    HRESULT hr = devicePtr->CreateBuffer(
+        &vertexBuffDesc,
+        nullptr,
+        &buffers[idx++]
+    );
+    assert("Failed to create Buffer!!!" && SUCCEEDED(hr));
+    
+    return bufferCount-1;
+}
+
+void DestroyVertexBuffer(BufferIdx idx) {
+    buffers[idx]->Release();
+    buffers[idx] = nullptr;
+}
+
+BufferIdx ReplaceVertexBuffer(u64 size, BufferIdx idx) {
+    DestroyVertexBuffer(idx);
+    return CreateVertexBuffer(size, idx);
 }

@@ -42,6 +42,7 @@ struct v4 {
 
 // This may change.
 typedef u64 ShaderIdx;
+typedef u64 BufferIdx;
 
 typedef enum {
     VertexShader,

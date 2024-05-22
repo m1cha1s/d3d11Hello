@@ -1,4 +1,4 @@
-set "src=main.cpp vector.cpp"
+set "src=main.c"
 set "libs=user32.lib d3d11.lib dxgi.lib d3dcompiler.lib dxguid.lib"
 
 if %1==DEBUG set flags=/Zi /diagnostics:column

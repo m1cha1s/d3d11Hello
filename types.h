@@ -18,6 +18,10 @@ typedef int64_t s64;
 typedef float  f32;
 typedef double f64;
 
+typedef u8 bool;
+#define true 1
+#define false 0
+
 // Some math stuff
 
 struct v2 {
